@@ -1,2 +1,4 @@
 /raw data/household_power_consumption.txt
 /processed data/cleaned_household_power.csv
+/processed data/daily_household_power_consumption.csv
+/processed data/monthly_energy_costs.csv
