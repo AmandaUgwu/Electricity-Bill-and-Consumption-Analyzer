@@ -1,0 +1,235 @@
+# Household Energy Consumption & Cost Forecasting
+
+A Python data science and machine learning project that transforms household electricity readings into daily consumption summaries, estimated energy costs and consumption predictions.
+
+The project covers data cleaning, time-series feature engineering, baseline forecasting, model comparison and error analysis.
+
+## Project Objectives
+
+- Process real household electricity measurements.
+- Audit missing readings and incomplete days.
+- Calculate daily and monthly electricity consumption.
+- Estimate energy costs using a configurable tariff.
+- Build historical consumption features for forecasting.
+- Compare simple forecasting methods with machine learning models.
+- Explore forecast uncertainty and data eligibility requirements.
+
+## Dataset
+
+This project uses the **Individual Household Electric Power Consumption** dataset from the UCI Machine Learning Repository.
+
+The dataset contains minute-level measurements from a household in Sceaux, France, recorded between December 2006 and November 2010.
+
+**Source:** [UCI Household Electric Power Consumption](https://archive.ics.uci.edu/dataset/235/individual+household+electric+power+consumption)
+
+The full dataset is excluded from this repository. Download and extract it separately to reproduce the analysis.
+
+### Power and Energy
+
+The `Global_active_power` column contains minute-averaged power in kilowatts (kW). Each one-minute reading is converted to energy as follows:
+
+```text
+Energy per minute (kWh) = Global_active_power (kW) / 60
+```
+
+These values are aggregated into daily and monthly energy consumption.
+
+## Workflow
+
+### 1. Data Inspection and Cleaning
+
+- Parse dates and times into a chronological datetime index.
+- Convert measurement columns to numeric values.
+- Inspect missing readings and data coverage.
+- Handle missing interval readings and filter incomplete days.
+- Prepare daily and monthly summaries.
+
+Approximately **1.30% of values were missing in each measurement column** during the initial audit.
+
+Hour-of-day median imputation was selected to account for differences between typical daytime and nighttime consumption. This method reduces the influence of extreme observations on replacement values, although it can smooth unusual consumption patterns.
+
+For forecasting evaluation, imputation statistics must be calculated from training data only. Extensive gaps require separate consideration because imputation can distort daily totals.
+
+### 2. Consumption and Cost Analysis
+
+Daily energy costs are estimated using a user-specified flat tariff:
+
+```text
+Daily cost = Daily consumption (kWh) × Tariff per kWh
+```
+
+Monthly summaries aggregate daily consumption and estimated costs.
+
+These are **energy-charge estimates**, rather than complete utility bills. Fixed charges, taxes and variable tariff structures are outside the current scope.
+
+### 3. Time-Series Feature Engineering
+
+The feature set includes calendar information and historical consumption patterns.
+
+| Feature | Description |
+|---|---|
+| `day_of_week` | Day of the week |
+| `day_of_year` | Position within the calendar year |
+| `month` | Calendar month |
+| `is_weekend` | Weekend indicator |
+| `consumption_lag_1` | Previous calendar day's consumption |
+| `consumption_lag_7` | Consumption seven calendar days earlier |
+| `rolling_mean_7` | Mean consumption over the previous seven days |
+| `rolling_mean_30` | Mean consumption over the previous thirty days |
+
+Rolling features use `.shift(1)` so the current day's consumption is excluded.
+
+Same-day target-derived attributes, including `daily_cost` and contemporaneous consumption alerts, are excluded from the predictors.
+
+**Calendar alignment matters:** if incomplete days are removed, the daily index must retain missing calendar dates before creating lag features. Otherwise, shifting by one row may represent the previous available observation rather than the previous day.
+
+### 4. Baseline and Model Development
+
+Three approaches were explored:
+
+- **Baseline:** A recent 30-day average used to forecast consumption across historical month-ends.
+- **Linear Regression:** A reference model for relationships between engineered features and consumption.
+- **Random Forest Regressor:** An ensemble model used to capture non-linear relationships in historical usage and calendar patterns.
+
+The Random Forest uses:
+
+```python
+RandomForestRegressor(
+    n_estimators=100,
+    random_state=42
+)
+```
+
+### 5. Evaluation
+
+Models are evaluated using a chronological train/test split, with earlier observations used for training and later observations reserved for testing.
+
+Reported metrics include:
+
+- **MAE:** Average absolute daily prediction error, measured in kWh.
+- **MAPE:** Average absolute percentage error.
+- **R²:** Model fit relative to predicting the test-set mean.
+
+## Reported Results
+
+| Approach | Evaluation | Daily MAE | MAPE | R² |
+|---|---|---:|---:|---:|
+| 30-day average baseline | Monthly backtesting | — | 20.26% monthly | — |
+| Linear Regression | Chronological daily test split | Approximately 3.10 kWh | Approximately 14.80% daily | 0.6100 |
+| Random Forest | Chronological daily test split | 2.69 kWh | 12.18% daily | 0.7359 |
+
+The Random Forest performed better than Linear Regression on the reported daily test metrics.
+
+**The monthly baseline score and daily model scores are not directly comparable.** Establishing improvement in next-month cost forecasting requires evaluating every approach over the same complete monthly forecast horizons.
+
+### Daily Prediction versus Next-Month Forecasting
+
+A daily test prediction may use actual consumption from the previous test day. This represents a forecast updated as new observations arrive.
+
+A complete next-month forecast is different: future daily consumption is unavailable at the month-end forecast date. Lag and rolling features must therefore be generated recursively from predictions, or the model must use a direct multi-step forecasting approach.
+
+A chronological split alone does not establish performance for this longer forecast horizon.
+
+## Findings
+
+### Historical Consumption Features
+
+Random Forest feature importance ranked recent consumption features, including `consumption_lag_1` and `rolling_mean_7`, among the strongest predictors, followed by calendar indicators.
+
+These importance scores describe how the fitted model uses its inputs; they do not establish causal relationships.
+
+### Monthly Aggregation
+
+Daily overpredictions and underpredictions can partially offset when summed into monthly totals. However, systematic errors can accumulate.
+
+Monthly forecast accuracy must therefore be measured directly.
+
+### Consumption and Cost Forecasts
+
+Under a constant tariff, estimated future energy costs are calculated from predicted consumption:
+
+```text
+Estimated monthly energy cost =
+Sum of predicted daily consumption × Tariff per kWh
+```
+
+This separates consumption forecasting from tariff assumptions.
+
+## Forecast Uncertainty and Eligibility
+
+The project explores error-based forecast buffers and applies a minimum-history rule of **30 consecutive valid days**.
+
+This is an application eligibility threshold, rather than evidence that thirty days is sufficient to learn seasonal patterns or train a reliable model.
+
+An initial uncertainty calculation uses daily residual standard deviation. This should be treated as an exploratory error buffer, **not a calibrated 95% monthly prediction interval**.
+
+A stronger approach would estimate uncertainty from complete monthly backtest errors and assess interval coverage on held-out periods.
+
+## Running the Project
+
+### Install Dependencies
+
+```bash
+pip install numpy pandas matplotlib scikit-learn
+```
+
+### Prepare the Data
+
+1. Download and extract the UCI dataset.
+2. Place the raw file in the location expected by the analysis code.
+3. Update local input and output paths where necessary.
+
+### Execution Order
+
+Run the project scripts or notebooks in this sequence:
+
+1. Data inspection and cleaning.
+2. Daily and monthly aggregation.
+3. Consumption and cost analysis.
+4. Time-series feature engineering.
+5. Baseline forecasting.
+6. Model training and evaluation.
+7. Feature importance and error analysis.
+
+### Model Training Example
+
+```python
+from sklearn.ensemble import RandomForestRegressor
+
+rf_model = RandomForestRegressor(
+    n_estimators=100,
+    random_state=42
+)
+
+rf_model.fit(X_train, y_train)
+y_pred = rf_model.predict(X_test)
+```
+
+This example assumes that the chronological split and feature preparation have already been completed.
+
+## Limitations
+
+- The dataset represents one household; performance may differ for other households.
+- Missing-data treatment can affect consumption totals and model results.
+- Calendar features represent seasonal patterns indirectly; external weather measurements are not currently included.
+- Daily test performance does not establish complete next-month forecasting performance.
+- Cost estimates depend on the supplied tariff.
+- Forecast uncertainty requires further calibration.
+
+## Future Improvements
+
+- Evaluate all approaches using identical rolling monthly backtests.
+- Implement and assess complete next-month forecasting.
+- Calibrate monthly prediction intervals.
+- Add weather data available at the forecast date.
+- Tune models using time-aware cross-validation.
+- Test sensitivity to missing-data handling.
+- Evaluate generalisation using additional households.
+
+## Dataset Attribution
+
+Hebrail, G. and Berard, A. *Individual Household Electric Power Consumption*. UCI Machine Learning Repository.
+
+https://doi.org/10.24432/C58K54
+
+The dataset is provided under the Creative Commons Attribution 4.0 licence.
